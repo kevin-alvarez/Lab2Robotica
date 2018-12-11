@@ -23,18 +23,18 @@ uint8_t fifoBuffer[64]; // FIFO storage buffer
 // orientation/motion vars
 Quaternion q; // [w, x, y, z] quaternion container
 VectorFloat gravity; // [x, y, z] gravity vector
-float ypr[3]; // [yaw, pitch, roll] yaw/pitch/roll container and gravity vector
+float ypr[3]; // [yaw, zpitch, roll] yaw/pitch/roll container and gravity vector
 
 //PID
-double originalSetpoint = 178;//Busqueda de Referencia angulo 0
+double originalSetpoint = 172;//Busqueda de Referencia angulo 0
 double setpoint = originalSetpoint;
 double movingAngleOffset = 0.1;
 double input, output;
 
 //adjust these values to fit your own design
-double Kp = 30;   // entre 30 y 100 
-double Ki = 100; // entre 0 y 200
-double Kd = 0; // entre 0 y 2
+double Kp = 100;   // entre 30 y 100 
+double Ki = 80; // entre 0 y 200
+double Kd = 1; // entre 0 y 2
 
 PID pid(&input, &output, &setpoint, Kp, Ki, Kd, DIRECT);
 
@@ -56,10 +56,13 @@ void dmpDataReady()
 }
 
 //bluetooth
-int bTx = 10;
-int bRx = 11;
+int bTx = 11;
+int bRx = 12;
 char cmdChar;
+char state; // can be P | I | D
 SoftwareSerial bluetooth(bTx, bRx);
+String stackPID = "";
+bool reading = false;
 
 
 // Bluetooth config
@@ -72,46 +75,77 @@ void bluetoothLoop(){
   if(bluetooth.available() > 0){
     cmdChar = bluetooth.read();
   }
-  
-  //Serial.println(cmdChar);
+
+  //Serial.println("Entered...");
+  if(reading){
+    switch(cmdChar){
+      case 'o':
+        reading = false;
+        switch(state){
+          case 'P':
+            Kp = stackPID.toDouble();
+            break;
+          case 'I':
+            Ki = stackPID.toDouble();
+            break;
+          case 'D':
+            Kd = stackPID.toDouble();
+            break;
+          default:
+            break;
+        }
+        Serial.println(stackPID);
+        stackPID = "";
+        break;
+      default:
+        stackPID += cmdChar;
+        break;
+    }
+  }
   switch(cmdChar){
+    case 'w':
+      Serial.println(cmdChar);
+      break;
+      
+    case 'a':
+      Serial.println(cmdChar);
+      break;
+      
+    case 's':
+      Serial.println(cmdChar);
+      break;
+  
+    case 'd':
+      Serial.println(cmdChar);
+      break;
+      
+    case 'P':
+      reading = true;
+      state = 'P';
+      Serial.println(Kp);
+      break;
+      
     case 'I':
+      reading = true;
+      state = 'I';
+      Serial.println(Ki);
       break;
       
-    case 'F':
+    case 'D':
+      reading = true;
+      state = 'D';
+      Serial.println(Kd);
       break;
       
-    case '9':
+    default:
       break;
-
-    // base  
-    case '1':
-      break;
-    case '2':
-      break;
-      
-    // vertical  
-    case '3':
-      break;
-    case '4':
-      break;
-      
-    // horizontal  
-    case '5':
-      break;
-    case '6':
-      break;
-
-    // pinza  
-    case '7':
-      break;
-    case '8':
-      break; 
   }
 }
 
 void setup()
 {
+  // bluetooth setup
+  bluetoothSetup();
 	// join I2C bus (I2Cdev library doesn't do this automatically)
 	#if I2CDEV_IMPLEMENTATION == I2CDEV_ARDUINO_WIRE
 	Wire.begin();
@@ -166,6 +200,9 @@ void setup()
 
 void loop()
 {
+  // bluetooth loop
+  bluetoothLoop();
+  
 	// if programming failed, don't try to do anything
 	if (!dmpReady) return;
 
