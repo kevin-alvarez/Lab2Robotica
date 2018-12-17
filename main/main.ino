@@ -1,4 +1,4 @@
-#include <SoftwareSerial.h> 
+#include <SoftwareSerial.h>
 #include <PID_v1.h>
 #include <LMotorController.h>
 #include <I2Cdev.h>
@@ -26,15 +26,15 @@ VectorFloat gravity; // [x, y, z] gravity vector
 float ypr[3]; // [yaw, zpitch, roll] yaw/pitch/roll container and gravity vector
 
 //PID
-double originalSetpoint = 172;//Busqueda de Referencia angulo 0
+double originalSetpoint = 169.5;//Busqueda de Referencia angulo 0 (173) (172.120)
 double setpoint = originalSetpoint;
 double movingAngleOffset = 0.1;
 double input, output;
 
 //adjust these values to fit your own design
-double Kp = 100;   // entre 30 y 100 
-double Ki = 80; // entre 0 y 200
-double Kd = 1; // entre 0 y 2
+double Kp = 40;   // entre 30 y 100 - 40
+double Ki = 180; // entre 0 y 200 - 180
+double Kd = 2; // entre 0 y 2 - 2
 
 PID pid(&input, &output, &setpoint, Kp, Ki, Kd, DIRECT);
 
@@ -53,6 +53,35 @@ volatile bool mpuInterrupt = false; // indicates whether MPU interrupt pin has g
 void dmpDataReady()
 {
   mpuInterrupt = true;
+}
+
+//movement instructions
+double movementFactor = 2; //grados de cambio del 0 del giroscopio
+int speedLeft = 100;
+int speedRight = 100;
+bool turningLeft = false;
+bool turningRight = false;
+int RR = 0;
+void moveForward(){
+  if (setpoint != originalSetpoint + movementFactor) setpoint += movementFactor;
+}
+
+void moveBackward(){
+  if (setpoint != originalSetpoint - movementFactor) setpoint -= movementFactor;
+}
+
+void moveLeft(){
+  turningLeft = true;
+}
+
+void moveRight(){
+  turningRight = true;
+}
+
+void idleMovement(){
+  if (setpoint != originalSetpoint) setpoint = originalSetpoint;
+  turningLeft = false;
+  turningRight = false;
 }
 
 //bluetooth
@@ -74,10 +103,8 @@ void bluetoothSetup(){
 void bluetoothLoop(){
   if(bluetooth.available() > 0){
     cmdChar = bluetooth.read();
-  }
-
-  //Serial.println("Entered...");
-  if(reading){
+    //Serial.println("Entered...");
+    if(reading){ //En caso de fallar, mover dentro de condicional de bluetooth
     switch(cmdChar){
       case 'o':
         reading = false;
@@ -95,51 +122,75 @@ void bluetoothLoop(){
             break;
         }
         Serial.println(stackPID);
+        pid.SetTunings(Kp, Ki, Kd);
         stackPID = "";
         break;
       default:
         stackPID += cmdChar;
         break;
+      }
+    }
+    switch(cmdChar){
+      case 'w':
+        moveForward();
+        Serial.println(cmdChar);
+        break;
+        
+      case 'a':
+        moveLeft();
+        Serial.println(cmdChar);
+        break;
+        
+      case 's':
+        moveBackward();
+        Serial.println(cmdChar);
+        break;
+    
+      case 'd':
+        moveRight();
+        Serial.println(cmdChar);
+        break;
+        
+      case 'P':
+        reading = true;
+        state = 'P';
+        break;
+        
+      case 'I':
+        reading = true;
+        state = 'I';
+        break;
+        
+      case 'D':
+        reading = true;
+        state = 'D';
+        break;
+        
+      default:
+        idleMovement();
+        Serial.println(cmdChar);
+        break;
     }
   }
-  switch(cmdChar){
-    case 'w':
-      Serial.println(cmdChar);
-      break;
-      
-    case 'a':
-      Serial.println(cmdChar);
-      break;
-      
-    case 's':
-      Serial.println(cmdChar);
-      break;
   
-    case 'd':
-      Serial.println(cmdChar);
-      break;
-      
-    case 'P':
-      reading = true;
-      state = 'P';
-      Serial.println(Kp);
-      break;
-      
-    case 'I':
-      reading = true;
-      state = 'I';
-      Serial.println(Ki);
-      break;
-      
-    case 'D':
-      reading = true;
-      state = 'D';
-      Serial.println(Kd);
-      break;
-      
-    default:
-      break;
-  }
+}
+
+//guardado de rutas
+char currentInst;
+int loopCounter;
+struct waypoints{
+  char instruction[50];
+  int loopCount[50];
+  int lastItem = 0;
+};
+struct waypoints wp;
+int loopRoute(){ //guardar estado de ruta por cada loop
+  
+  currentInst = cmdChar; //guarda instruccion actual  
+}
+
+void runRoute(){ //correr ruta guardada
+  
 }
 
 void setup()
@@ -182,7 +233,7 @@ void setup()
 
 		//setup PID
 		pid.SetMode(AUTOMATIC);
-		pid.SetSampleTime(10);
+		pid.SetSampleTime(25); // sample original: 10
 		pid.SetOutputLimits(-255, 255); 
 	}
 	else
@@ -211,7 +262,14 @@ void loop()
 	{
 		//no mpu data - performing PID calculations and output to motors 
 		pid.Compute();
-		motorController.move(output, MIN_ABS_SPEED);
+    RR = RR+1 % 3;
+    if (turningLeft && RR == 0){
+      motorController.move(-200,200, MIN_ABS_SPEED);
+    }else if (turningRight && RR == 0){
+      motorController.move(200,-200, MIN_ABS_SPEED);
+    }else{
+      motorController.move(output, MIN_ABS_SPEED);
+    }
 	}
 
 	// reset interrupt flag and get INT_STATUS byte
