@@ -57,11 +57,8 @@ void dmpDataReady()
 
 //movement instructions
 double movementFactor = 2; //grados de cambio del 0 del giroscopio
-int speedLeft = 100;
-int speedRight = 100;
 bool turningLeft = false;
 bool turningRight = false;
-int RR = 0;
 void moveForward(){
   if (setpoint != originalSetpoint + movementFactor) setpoint += movementFactor;
 }
@@ -74,6 +71,7 @@ void moveLeft(){
   turningLeft = true;
 }
 
+void moveRight(){
   turningRight = true;
 }
 
@@ -92,6 +90,62 @@ SoftwareSerial bluetooth(bTx, bRx);
 String stackPID = "";
 bool readingPID = false;
 char stateRoute; // Rutas: 'r' - recording ; 'p' - playing ; '0' - none
+
+//guardado de rutas
+char currentInst;
+int loopCounter;
+int currentIndexRunning; // var to run routes
+struct waypoints{
+  char instruction[50];
+  int loopCount[50];
+  int lastItem = 0;
+};
+struct waypoints wp;
+
+void routeSetup(){
+  stateRoute = '0';
+  currentInst = '0';
+  loopCounter = 0;
+  currentIndexRunning = 0;
+}
+
+void saveInst(){
+  currentInst = cmdChar;
+}
+
+void savePoint(){
+  wp.instruction[wp.lastItem] = currentInst; // save current instrucion on list
+  wp.loopCount[wp.lastItem] = loopCounter; // save loop counter on list
+  wp.lastItem++; // update list size
+  loopCounter = 0; // restart loop counter
+}
+
+void loopRoute(){
+  loopCounter++;
+}
+
+void runRoute(){
+  switch(wp.instruction[currentIndexRunning]){ // ineficiente - muchas lecturas y escrituras
+    case 'w':
+      moveForward();
+      break;
+
+    case 'a':
+      moveLeft();
+      break;
+
+    case 's':
+      moveBackward();
+      break;
+
+    case 'd':
+      moveRight();
+      break;
+  }
+  wp.loopCount[currentIndexRunning]--;
+  if (wp.loopCount[currentIndexRunning] == 0) currentIndexRunning++; // if not loops remaining, then go to next instruction
+  if (currentIndexRunning == wp.lastItem) stateRoute = '0'; // if all waypoints were passed, then finish route playing
+}
 
 // Bluetooth config
 void bluetoothSetup(){
@@ -200,17 +254,17 @@ void bluetoothLoop(){
         break;
         
       case 'P':
-        reading = true;
+        readingPID = true;
         state = 'P';
         break;
         
       case 'I':
-        reading = true;
+        readingPID = true;
         state = 'I';
         break;
         
       case 'D':
-        reading = true;
+        readingPID = true;
         state = 'D';
         break;
         
@@ -219,65 +273,9 @@ void bluetoothLoop(){
         Serial.println(cmdChar);
         break;
     }
-  }
-  
 }
 
-//guardado de rutas
-char currentInst;
-int loopCounter;
-int currentIndexRunning; // var to run routes
-struct waypoints{
-  char instruction[50];
-  int loopCount[50];
-  int lastItem = 0;
-};
-struct waypoints wp;
 
-void routeSetup(){
-  stateRoute = '0';
-  currentInst = '0';
-  loopCounter = 0;
-  currentIndexRunning = 0;
-}
-
-void saveInst(){
-  currentInst = cmdChar;
-}
-
-void savePoint(){
-  wp.instruction[wp.lastItem] = currentInst; // save current instrucion on list
-  wp.loopCount[wp.lastItem] = loopCounter; // save loop counter on list
-  wp.lastItem++; // update list size
-  loopCounter = 0; // restart loop counter
-}
-
-void loopRoute(){
-  loopCounter++;
-}
-
-void runRoute(){
-  switch(wp.instruction[currentIndexRunning]){ // ineficiente - muchas lecturas y escrituras
-    case 'w':
-      moveForward();
-      break;
-
-    case 'a':
-      moveLeft();
-      break;
-
-    case 's':
-      moveBackward();
-      break;
-
-    case 'd':
-      moveRight();
-      break;
-  }
-  wp.loopCount[currentIndexRunning]--;
-  if (wp.loopCount[currentIndexRunning] == 0) currentIndexRunning++; // if not loops remaining, then go to next instruction
-  if (currentIndexRunning == wp.lastItem) stateRoute = '0'; // if all waypoints were passed, then finish route playing
-}
 
 void setup()
 {
