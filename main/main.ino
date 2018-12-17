@@ -26,15 +26,15 @@ VectorFloat gravity; // [x, y, z] gravity vector
 float ypr[3]; // [yaw, zpitch, roll] yaw/pitch/roll container and gravity vector
 
 //PID
-double originalSetpoint = 172;//Busqueda de Referencia angulo 0
+double originalSetpoint = 169.5;//Busqueda de Referencia angulo 0 (173) (172.120)
 double setpoint = originalSetpoint;
 double movingAngleOffset = 0.1;
 double input, output;
 
 //adjust these values to fit your own design
-double Kp = 100;   // entre 30 y 100 
-double Ki = 80; // entre 0 y 200
-double Kd = 1; // entre 0 y 2
+double Kp = 40;   // entre 30 y 100 - 40
+double Ki = 180; // entre 0 y 200 - 180
+double Kd = 2; // entre 0 y 2 - 2
 
 PID pid(&input, &output, &setpoint, Kp, Ki, Kd, DIRECT);
 
@@ -55,6 +55,37 @@ void dmpDataReady()
   mpuInterrupt = true;
 }
 
+//movement instructions
+double movementFactor = 2; //grados de cambio del 0 del giroscopio
+int speedLeft = 100;
+int speedRight = 100;
+bool turningLeft = false;
+bool turningRight = false;
+int RR = 0;
+void moveForward(){
+  if (setpoint != originalSetpoint + movementFactor) setpoint += movementFactor;
+}
+
+void moveBackward(){
+  if (setpoint != originalSetpoint - movementFactor) setpoint -= movementFactor;
+}
+
+void moveLeft(){
+  //if (setpoint != originalSetpoint + movementFactor) setpoint += movementFactor;
+  turningLeft = true;
+}
+
+void moveRight(){
+  //if (setpoint != originalSetpoint + movementFactor) setpoint += movementFactor;
+  turningRight = true;
+}
+
+void idleMovement(){
+  if (setpoint != originalSetpoint) setpoint = originalSetpoint;
+  turningLeft = false;
+  turningRight = false;
+}
+
 //bluetooth
 int bTx = 11;
 int bRx = 12;
@@ -62,8 +93,8 @@ char cmdChar;
 char state; // can be P | I | D
 SoftwareSerial bluetooth(bTx, bRx);
 String stackPID = "";
-bool reading = false;
-
+bool readingPID = false;
+char stateRoute; // Rutas: 'r' - recording ; 'p' - playing ; '0' - none
 
 // Bluetooth config
 void bluetoothSetup(){
@@ -74,78 +105,147 @@ void bluetoothSetup(){
 void bluetoothLoop(){
   if(bluetooth.available() > 0){
     cmdChar = bluetooth.read();
-  }
-
-  //Serial.println("Entered...");
-  if(reading){
+    //Serial.println("Entered...");
+    if(readingPID){ //En caso de fallar, mover dentro de condicional de bluetooth
+      switch(cmdChar){
+        case 'o':
+          readingPID = false;
+          switch(state){
+            case 'P':
+              Kp = stackPID.toDouble();
+              break;
+            case 'I':
+              Ki = stackPID.toDouble();
+              break;
+            case 'D':
+              Kd = stackPID.toDouble();
+              break;
+            default:
+              break;
+          }
+          pid.SetTunings(Kp, Ki, Kd);
+          stackPID = "";
+          break;
+        default:
+          stackPID += cmdChar;
+          break;
+      }
+    }
     switch(cmdChar){
-      case 'o':
-        reading = false;
-        switch(state){
-          case 'P':
-            Kp = stackPID.toDouble();
-            break;
-          case 'I':
-            Ki = stackPID.toDouble();
-            break;
-          case 'D':
-            Kd = stackPID.toDouble();
-            break;
-          default:
-            break;
-        }
-        Serial.println(stackPID);
-        stackPID = "";
+      case 'w':
+        moveForward();
+        saveInst();
         break;
+        
+      case 'a':
+        moveLeft();
+        saveInst();
+        break;
+        
+      case 's':
+        moveBackward();
+        saveInst();
+        break;
+    
+      case 'd':
+        moveRight();
+        saveInst();
+        break;
+        
+      case 'r':
+        stateRoute = 'r'; // recording route
+        break;
+        
+      case 'p':
+        stateRoute = 'p'; // playing route
+        break;
+        
+      case 'P':
+        readingPID = true;
+        state = 'P';
+        break;
+        
+      case 'I':
+        readingPID = true;
+        state = 'I';
+        break;
+        
+      case 'D':
+        readingPID = true;
+        state = 'D';
+        break;
+        
       default:
-        stackPID += cmdChar;
+        idleMovement();
+        if (stateRoute == 'r') savePoint();
         break;
     }
   }
-  switch(cmdChar){
-    case 'w':
-      Serial.println(cmdChar);
-      break;
-      
-    case 'a':
-      Serial.println(cmdChar);
-      break;
-      
-    case 's':
-      Serial.println(cmdChar);
-      break;
   
+}
+
+//guardado de rutas
+char currentInst;
+int loopCounter;
+int currentIndexRunning; // var to run routes
+struct waypoints{
+  char instruction[50];
+  int loopCount[50];
+  int lastItem = 0;
+};
+struct waypoints wp;
+
+void routeSetup(){
+  stateRoute = '0';
+  currentInst = '0';
+  loopCounter = 0;
+  currentIndexRunning = 0;
+}
+
+void saveInst(){
+  currentInst = cmdChar;
+}
+
+void savePoint(){
+  wp.instruction[wp.lastItem] = currentInst; // save current instrucion on list
+  wp.loopCount[wp.lastItem] = loopCounter; // save loop counter on list
+  wp.lastItem++; // update list size
+  loopCounter = 0; // restart loop counter
+}
+
+void loopRoute(){
+  loopCounter++;
+}
+
+void runRoute(){
+  switch(wp.instruction[currentIndexRunning]){ // ineficiente - muchas lecturas y escrituras
+    case 'w':
+      moveForward();
+      break;
+
+    case 'a':
+      moveLeft();
+      break;
+
+    case 's':
+      moveBackward();
+      break;
+
     case 'd':
-      Serial.println(cmdChar);
-      break;
-      
-    case 'P':
-      reading = true;
-      state = 'P';
-      Serial.println(Kp);
-      break;
-      
-    case 'I':
-      reading = true;
-      state = 'I';
-      Serial.println(Ki);
-      break;
-      
-    case 'D':
-      reading = true;
-      state = 'D';
-      Serial.println(Kd);
-      break;
-      
-    default:
+      moveRight();
       break;
   }
+  wp.loopCount[currentIndexRunning]--;
+  if (wp.loopCount[currentIndexRunning] == 0) currentIndexRunning++; // if not loops remaining, then go to next instruction
+  if (currentIndexRunning == wp.lastItem) stateRoute = '0'; // if all waypoints were passed, then finish route playing
 }
 
 void setup()
 {
   // bluetooth setup
   bluetoothSetup();
+  // Route setup
+  routeSetup();
 	// join I2C bus (I2Cdev library doesn't do this automatically)
 	#if I2CDEV_IMPLEMENTATION == I2CDEV_ARDUINO_WIRE
 	Wire.begin();
@@ -182,7 +282,7 @@ void setup()
 
 		//setup PID
 		pid.SetMode(AUTOMATIC);
-		pid.SetSampleTime(10);
+		pid.SetSampleTime(25); // sample original: 10
 		pid.SetOutputLimits(-255, 255); 
 	}
 	else
@@ -202,16 +302,23 @@ void loop()
 {
   // bluetooth loop
   bluetoothLoop();
+  if (stateRoute == 'r') loopRoute();
+  if (stateRoute == 'p') runRoute();
   
 	// if programming failed, don't try to do anything
 	if (!dmpReady) return;
-
 	// wait for MPU interrupt or extra packet(s) available
 	while (!mpuInterrupt && fifoCount < packetSize)
 	{
 		//no mpu data - performing PID calculations and output to motors 
 		pid.Compute();
-		motorController.move(output, MIN_ABS_SPEED);
+    if (turningLeft && output < 10){
+      motorController.move(0, output, MIN_ABS_SPEED); // giro izquiera (-w_i = w_d)
+    }else if (turningRight && output < 10){
+      motorController.move(output, 0, MIN_ABS_SPEED); // giro derecha (w_i = -w_d)
+    }else{
+      motorController.move(output, MIN_ABS_SPEED);
+    }
 	}
 
 	// reset interrupt flag and get INT_STATUS byte
