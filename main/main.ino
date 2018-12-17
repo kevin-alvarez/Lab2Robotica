@@ -71,12 +71,9 @@ void moveBackward(){
 }
 
 void moveLeft(){
-  //if (setpoint != originalSetpoint + movementFactor) setpoint += movementFactor;
   turningLeft = true;
 }
 
-void moveRight(){
-  //if (setpoint != originalSetpoint + movementFactor) setpoint += movementFactor;
   turningRight = true;
 }
 
@@ -178,6 +175,48 @@ void bluetoothLoop(){
       default:
         idleMovement();
         if (stateRoute == 'r') savePoint();
+        break;
+      }
+    }
+    switch(cmdChar){
+      case 'w':
+        moveForward();
+        Serial.println(cmdChar);
+        break;
+        
+      case 'a':
+        moveLeft();
+        Serial.println(cmdChar);
+        break;
+        
+      case 's':
+        moveBackward();
+        Serial.println(cmdChar);
+        break;
+    
+      case 'd':
+        moveRight();
+        Serial.println(cmdChar);
+        break;
+        
+      case 'P':
+        reading = true;
+        state = 'P';
+        break;
+        
+      case 'I':
+        reading = true;
+        state = 'I';
+        break;
+        
+      case 'D':
+        reading = true;
+        state = 'D';
+        break;
+        
+      default:
+        idleMovement();
+        Serial.println(cmdChar);
         break;
     }
   }
